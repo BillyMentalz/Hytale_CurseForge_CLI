@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 class Config:
-    """Manages CLI configuration (API key, game path, etc.)."""
+    """Manages CLI configuration (API key, mods path, etc.)."""
 
     def __init__(self, config_path: str = None):
         if config_path:
@@ -44,13 +44,25 @@ class Config:
         self.save()
 
     @property
+    def mods_path(self) -> str:
+        """Path to mods directory. For backwards compat, also checks 'game_path'."""
+        return self._data.get('mods_path', self._data.get('game_path', ''))
+
+    @mods_path.setter
+    def mods_path(self, value: str):
+        self._data['mods_path'] = os.path.normpath(os.path.abspath(value))
+        # Remove old game_path key if present
+        self._data.pop('game_path', None)
+        self.save()
+
+    # Alias for backwards compatibility
+    @property
     def game_path(self) -> str:
-        return self._data.get('game_path', '')
+        return self.mods_path
 
     @game_path.setter
     def game_path(self, value: str):
-        self._data['game_path'] = os.path.normpath(os.path.abspath(value))
-        self.save()
+        self.mods_path = value
 
     @property
     def installed_mods(self) -> dict:

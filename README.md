@@ -11,7 +11,7 @@ Fork of [andretini/Hytale_CurseForge_Client](https://github.com/andretini/Hytale
 - **Zero dependencies** - Works with Python stdlib only (click/rich optional for prettier output)
 - **APT-style commands** - Familiar syntax: `search`, `install`, `remove`, `update`, `list`
 - **Cron compatible** - Use `-y` flag for non-interactive automation
-- **Auto-sorting** - Automatically installs mods/worlds/prefabs to correct folders
+- **Works with client & server** - Point directly to your mods folder
 - **Update management** - Checks for updates and removes old files automatically
 - **Config persistence** - API key and settings stored in `~/.config/hytale-cf/`
 
@@ -29,7 +29,11 @@ cd Hytale_CurseForge_CLI
 
 # Configure (interactive - recommended)
 ./hytale-cf config --api-key-prompt
-./hytale-cf config --game-path /path/to/hytale
+
+# Set mods path (point directly to your mods folder)
+# Client: ./hytale-cf config --mods-path /path/to/hytale/UserData/Mods
+# Server: ./hytale-cf config --mods-path /path/to/server/mods
+./hytale-cf config --mods-path /path/to/mods
 
 # Search and install mods
 ./hytale-cf search magic
@@ -64,7 +68,7 @@ pip install -e ".[pretty]"
 | `hytale-cf list` | List installed mods |
 | `hytale-cf info <id>` | Show detailed mod information |
 | `hytale-cf update` | Check and install updates for all mods |
-| `hytale-cf config` | Configure API key and game path |
+| `hytale-cf config` | Configure API key and mods path |
 
 ### Command Options
 
@@ -86,7 +90,7 @@ hytale-cf list -v
 hytale-cf config --show                   # Show current config
 hytale-cf config --api-key-prompt         # Set API key interactively
 hytale-cf config --api-key 'KEY'          # Set API key (use single quotes!)
-hytale-cf config --game-path /path        # Set game directory
+hytale-cf config --mods-path /path/to/mods  # Set mods directory
 ```
 
 ---
@@ -124,13 +128,17 @@ crontab -e
 ./hytale-cf config --api-key '$2a$10$YOUR_KEY_HERE'
 ```
 
-### 2. Setting the Game Path
+### 2. Setting the Mods Path
+
+Point directly to where mod files (.jar) should be installed:
 
 ```bash
-./hytale-cf config --game-path /path/to/hytale
-```
+# For Hytale client
+./hytale-cf config --mods-path /path/to/hytale/UserData/Mods
 
-The path should point to your Hytale installation root (containing `UserData` folder).
+# For dedicated server
+./hytale-cf config --mods-path /path/to/server/mods
+```
 
 ### 3. Verify Configuration
 
@@ -140,21 +148,7 @@ The path should point to your Hytale installation root (containing `UserData` fo
 
 ---
 
-## How It Works
-
-### Auto-Sorting
-
-The CLI automatically detects resource types and installs to the correct subfolder:
-
-| Type | Destination |
-|------|-------------|
-| Mods | `UserData/Mods` |
-| Worlds | `UserData/Saves` (auto-extracted from zip) |
-| Prefabs | `prefabs` |
-| Bootstrap | `bootstrap` |
-| Translations | `translations` |
-
-### Update Behavior
+## Update Behavior
 
 When updating mods:
 1. Checks if newer version is available on CurseForge
@@ -171,7 +165,7 @@ Settings are stored in `~/.config/hytale-cf/config.json`:
 ```json
 {
   "api_key": "$2a$10$...",
-  "game_path": "/path/to/hytale",
+  "mods_path": "/path/to/mods",
   "installed": {
     "1423494": {
       "mod_id": 1423494,
@@ -180,7 +174,7 @@ Settings are stored in `~/.config/hytale-cf/config.json`:
       "version": "EyeSpy-2026.1.20-5708.jar",
       "file_id": 7491939,
       "class_id": 9137,
-      "path": "/path/to/hytale/UserData/Mods/EyeSpy-2026.1.20-5708.jar"
+      "path": "/path/to/mods/EyeSpy-2026.1.20-5708.jar"
     }
   }
 }

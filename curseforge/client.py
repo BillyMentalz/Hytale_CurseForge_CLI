@@ -19,12 +19,15 @@ CLASS_MAP = {
     "translations": 10350,
 }
 
+# Subdirectory mapping by category (relative to mods_path)
+# For client: set mods_path to /path/to/hytale/UserData/Mods
+# For server: set mods_path to /path/to/server/mods
 PATH_MAP = {
-    9137: "UserData/Mods",
-    9184: "UserData/Saves",
-    9185: "prefabs",
-    9281: "bootstrap",
-    10350: "translations",
+    9137: "",           # Mods go directly in mods_path
+    9184: "../Saves",   # Worlds relative to mods_path
+    9185: "../prefabs",
+    9281: "../bootstrap",
+    10350: "../translations",
 }
 
 
@@ -180,8 +183,11 @@ class CurseForgeClient:
 
         filename = latest_file['fileName']
         class_id = mod_info.get('classId', 9137)
-        subpath = PATH_MAP.get(class_id, "UserData/Mods")
-        install_dir = Path(game_path) / subpath
+        subpath = PATH_MAP.get(class_id, "")
+        if subpath:
+            install_dir = (Path(game_path) / subpath).resolve()
+        else:
+            install_dir = Path(game_path)
         install_dir.mkdir(parents=True, exist_ok=True)
 
         dest_path = install_dir / filename
@@ -216,8 +222,11 @@ class CurseForgeClient:
     def uninstall_mod(self, mod_info: dict, game_path: str) -> bool:
         """Remove an installed mod."""
         class_id = mod_info.get('class_id', 9137)
-        subpath = PATH_MAP.get(class_id, "UserData/Mods")
-        install_dir = Path(game_path) / subpath
+        subpath = PATH_MAP.get(class_id, "")
+        if subpath:
+            install_dir = (Path(game_path) / subpath).resolve()
+        else:
+            install_dir = Path(game_path)
         filename = mod_info.get('filename', '')
 
         if not filename:

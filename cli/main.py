@@ -98,14 +98,14 @@ if HAS_CLICK:
     @main.command()
     @click.option('--api-key', help="Set API key (use single quotes: --api-key 'KEY')")
     @click.option('--api-key-prompt', is_flag=True, help='Set API key interactively (recommended)')
-    @click.option('--game-path', help='Set Hytale game directory')
+    @click.option('--mods-path', help='Set mods directory (where .jar files go)')
     @click.option('--show', is_flag=True, help='Show current config')
-    def config(api_key: str, api_key_prompt: bool, game_path: str, show: bool):
-        """Configure API key and game path."""
+    def config(api_key: str, api_key_prompt: bool, mods_path: str, show: bool):
+        """Configure API key and mods path."""
         if api_key_prompt:
             _do_config_interactive_key()
         else:
-            _do_config(api_key, game_path, show)
+            _do_config(api_key, mods_path, show)
 
 
 # ============================================================
@@ -158,7 +158,7 @@ else:
         p_config = subparsers.add_parser('config', help='Configure settings')
         p_config.add_argument('--api-key', help="Set API key (use single quotes)")
         p_config.add_argument('--api-key-prompt', action='store_true', help='Set API key interactively (recommended)')
-        p_config.add_argument('--game-path', help='Set game path')
+        p_config.add_argument('--mods-path', help='Set mods directory')
         p_config.add_argument('--show', action='store_true', help='Show config')
 
         args = parser.parse_args()
@@ -179,7 +179,7 @@ else:
             if args.api_key_prompt:
                 _do_config_interactive_key()
             else:
-                _do_config(args.api_key, args.game_path, args.show)
+                _do_config(args.api_key, args.mods_path, args.show)
         else:
             parser.print_help()
 
@@ -280,8 +280,8 @@ def _do_install(mod_id: int, skip_confirm: bool):
     """Install implementation."""
     client, config = get_client_and_config()
 
-    if not config.game_path:
-        out.error("Game path not set. Run: hytale-cf config --game-path /path/to/hytale")
+    if not config.mods_path:
+        out.error("Mods path not set. Run: hytale-cf config --mods-path /path/to/mods")
         return
 
     if config.is_installed(mod_id):
@@ -310,7 +310,7 @@ def _do_install(mod_id: int, skip_confirm: bool):
 
     with out.progress_download(f"Installing {mod_name}...") as progress:
         try:
-            result = client.install_mod(mod_id, config.game_path, progress.update)
+            result = client.install_mod(mod_id, config.mods_path, progress.update)
             config.add_installed(mod_id, result)
         except Exception as e:
             out.error(f"Installation failed: {e}")
@@ -324,8 +324,8 @@ def _do_remove(mod_id: int, skip_confirm: bool):
     """Remove implementation."""
     config = Config()
 
-    if not config.game_path:
-        out.error("Game path not set.")
+    if not config.mods_path:
+        out.error("Mods path not set.")
         return
 
     if not config.is_installed(mod_id):
@@ -342,7 +342,7 @@ def _do_remove(mod_id: int, skip_confirm: bool):
     with out.status(f"Removing {mod_name}"):
         try:
             client, _ = get_client_and_config()
-            success = client.uninstall_mod(mod_info, config.game_path)
+            success = client.uninstall_mod(mod_info, config.mods_path)
             if success:
                 config.remove_installed(mod_id)
                 out.success(f"Removed {mod_name}")
@@ -439,7 +439,7 @@ def _do_update(skip_confirm: bool):
         try:
             result = client.install_mod(
                 upd['mod_id'],
-                config.game_path,
+                config.mods_path,
                 old_filename=upd.get('old_filename')
             )
             config.add_installed(upd['mod_id'], result)
@@ -448,14 +448,14 @@ def _do_update(skip_confirm: bool):
             out.error(f"Failed to update {upd['name']}: {e}")
 
 
-def _do_config(api_key: str, game_path: str, show: bool):
+def _do_config(api_key: str, mods_path: str, show: bool):
     """Config implementation."""
     cfg = Config()
 
     if show:
         key_display = ('*' * 8 + cfg.api_key[-8:]) if cfg.api_key else 'Not set'
         content = f"[bold]API Key:[/bold] {key_display}\n"
-        content += f"[bold]Game Path:[/bold] {cfg.game_path or 'Not set'}\n"
+        content += f"[bold]Mods Path:[/bold] {cfg.mods_path or 'Not set'}\n"
         content += f"[bold]Config File:[/bold] {cfg.config_path}"
         out.panel(content, title="Current Configuration")
         return
@@ -470,20 +470,20 @@ def _do_config(api_key: str, game_path: str, show: bool):
             cfg.api_key = api_key
             out.success("API key saved")
 
-    if game_path:
+    if mods_path:
         import os
-        if os.path.isdir(game_path):
-            cfg.game_path = game_path
-            out.success(f"Game path set to: {cfg.game_path}")
+        if os.path.isdir(mods_path):
+            cfg.mods_path = mods_path
+            out.success(f"Mods path set to: {cfg.mods_path}")
         else:
-            out.error(f"Directory does not exist: {game_path}")
+            out.error(f"Directory does not exist: {mods_path}")
             return
 
-    if not api_key and not game_path:
+    if not api_key and not mods_path:
         out.print("Usage:")
         out.print("  hytale-cf config --api-key 'YOUR_KEY'  (use single quotes!)")
         out.print("  hytale-cf config --api-key-prompt      (interactive, safer)")
-        out.print("  hytale-cf config --game-path /path/to/hytale")
+        out.print("  hytale-cf config --mods-path /path/to/mods")
         out.print("  hytale-cf config --show")
 
 
