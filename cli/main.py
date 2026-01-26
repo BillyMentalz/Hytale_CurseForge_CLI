@@ -96,6 +96,12 @@ if HAS_CLICK:
         _do_update(yes)
 
     @main.command()
+    @click.option('-y', '--yes', is_flag=True, help='Skip confirmation')
+    def reinstall(yes: bool):
+        """Re-download all mods to current mods-path."""
+        _do_reinstall(yes)
+
+    @main.command()
     @click.option('--api-key', help="Set API key (use single quotes: --api-key 'KEY')")
     @click.option('--api-key-prompt', is_flag=True, help='Set API key interactively (recommended)')
     @click.option('--mods-path', help='Set mods directory (where .jar files go)')
@@ -154,6 +160,10 @@ else:
         p_update = subparsers.add_parser('update', help='Update all mods')
         p_update.add_argument('-y', '--yes', action='store_true')
 
+        # reinstall
+        p_reinstall = subparsers.add_parser('reinstall', help='Re-download all mods')
+        p_reinstall.add_argument('-y', '--yes', action='store_true')
+
         # config
         p_config = subparsers.add_parser('config', help='Configure settings')
         p_config.add_argument('--api-key', help="Set API key (use single quotes)")
@@ -175,6 +185,8 @@ else:
             _do_list(args.verbose)
         elif args.command == 'update':
             _do_update(args.yes)
+        elif args.command == 'reinstall':
+            _do_reinstall(args.yes)
         elif args.command == 'config':
             if args.api_key_prompt:
                 _do_config_interactive_key()
@@ -446,6 +458,40 @@ def _do_update(skip_confirm: bool):
             out.success(f"Updated {upd['name']}")
         except Exception as e:
             out.error(f"Failed to update {upd['name']}: {e}")
+
+
+def _do_reinstall(skip_confirm: bool):
+    """Reinstall implementation."""
+    client, config = get_client_and_config()
+
+    if not config.mods_path:
+        out.error("Mods path not set. Run: hytale-cf config --mods-path /path/to/mods")
+        return
+
+    installed = config.installed_mods
+    if not installed:
+        out.print("No mods installed.")
+        return
+
+    out.print(f"Reinstalling {len(installed)} mods to current mods path...\n")
+
+    if not skip_confirm and not _confirm(f"Re-download {len(installed)} mods?"):
+        out.warning("Aborted.")
+        return
+
+    for mod_id, info in installed.items():
+        mod_name = info.get('name', mod_id)
+        out.print(f"\nReinstalling {mod_name}...")
+        try:
+            result = client.install_mod(
+                int(mod_id),
+                config.mods_path,
+                old_filename=info.get('filename')
+            )
+            config.add_installed(int(mod_id), result)
+            out.success(f"Reinstalled {mod_name}")
+        except Exception as e:
+            out.error(f"Failed to reinstall {mod_name}: {e}")
 
 
 def _do_config(api_key: str, mods_path: str, show: bool):

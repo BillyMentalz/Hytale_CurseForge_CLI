@@ -68,6 +68,7 @@ pip install -e ".[pretty]"
 | `hytale-cf list` | List installed mods |
 | `hytale-cf info <id>` | Show detailed mod information |
 | `hytale-cf update` | Check and install updates for all mods |
+| `hytale-cf reinstall` | Re-download all mods to the current mods path |
 | `hytale-cf config` | Configure API key and mods path |
 
 ### Command Options
@@ -82,6 +83,7 @@ hytale-cf search -c mods -n 20 "magic"    # Limit results
 hytale-cf install -y 12345
 hytale-cf remove -y 12345
 hytale-cf update -y
+hytale-cf reinstall -y
 
 # Verbose output
 hytale-cf list -v
