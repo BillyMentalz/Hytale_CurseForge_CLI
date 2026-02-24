@@ -350,10 +350,11 @@ def _do_remove(mod_id: int, skip_confirm: bool):
     if not skip_confirm and not _confirm(f"Remove {mod_name}?"):
         out.warning("Aborted.")
         return
+    
+    client, _ = get_client_and_config()
 
     with out.status(f"Removing {mod_name}"):
         try:
-            client, _ = get_client_and_config()
             success = client.uninstall_mod(mod_info, config.mods_path)
             if success:
                 config.remove_installed(mod_id)
