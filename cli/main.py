@@ -70,7 +70,7 @@ if HAS_CLICK:
         _do_info(mod_id)
 
     @main.command()
-    @click.argument('mod_id', type=int)
+    @click.argument('mod_id', nargs = -1, type=int)
     @click.option('-y', '--yes', is_flag=True, help='Skip confirmation')
     def install(mod_id: int, yes: bool):
         """Install a mod by its ID."""
@@ -123,6 +123,7 @@ else:
 
     def main():
         """Main entry point using argparse."""
+        
         parser = argparse.ArgumentParser(
             prog='hytale-cf',
             description='Hytale CurseForge CLI - APT-style mod manager'
@@ -144,9 +145,9 @@ else:
 
         # install
         p_install = subparsers.add_parser('install', help='Install a mod')
-        p_install.add_argument('mod_id', type=int, help='Mod ID')
+        p_install.add_argument('mod_ids',type=int, nargs='+', help='Mod ID')
         p_install.add_argument('-y', '--yes', action='store_true', help='Skip confirmation')
-
+        
         # remove
         p_remove = subparsers.add_parser('remove', help='Remove a mod')
         p_remove.add_argument('mod_id', type=int, help='Mod ID')
@@ -178,7 +179,7 @@ else:
         elif args.command == 'info':
             _do_info(args.mod_id)
         elif args.command == 'install':
-            _do_install(args.mod_id, args.yes)
+            _do_install(args.mod_ids, args.yes)
         elif args.command == 'remove':
             _do_remove(args.mod_id, args.yes)
         elif args.command == 'list':
@@ -192,8 +193,10 @@ else:
                 _do_config_interactive_key()
             else:
                 _do_config(args.api_key, args.mods_path, args.show)
+        elif args.command == 'testing':
+            print(args.things)
         else:
-            parser.print_help()
+            parser.print_help() 
 
 
 # ============================================================
@@ -213,6 +216,7 @@ def _confirm(message: str) -> bool:
 def _do_search(query: str, category: str, limit: int):
     """Search implementation."""
     client, config = get_client_and_config()
+    
 
     try:
         with out.status(f"Searching for '{query}'"):
@@ -288,47 +292,58 @@ def _do_info(mod_id: int):
         out.print(f"\nWebsite: {mod['links']['websiteUrl']}")
 
 
-def _do_install(mod_id: int, skip_confirm: bool):
+def _do_install(mod_ids: [int], skip_confirm: bool):
     """Install implementation."""
     client, config = get_client_and_config()
 
     if not config.mods_path:
         out.error("Mods path not set. Run: hytale-cf config --mods-path /path/to/mods")
         return
+    
+    has_exception = False
 
-    if config.is_installed(mod_id):
-        out.warning(f"Mod {mod_id} is already installed")
-        if not skip_confirm and not _confirm("Reinstall?"):
-            return
-
-    with out.status("Fetching mod info"):
+    with out.status(f"Fetching mod info:"):
         try:
-            mod = client.get_mod(mod_id)
-            latest = client.get_latest_file(mod_id)
+            mod_name = []
+            file_name = [] 
+            file_size = 0
+            for mod_id in mod_ids: 
+                if config.is_installed(mod_id):
+                    out.warning(f"Warning: Mod {mod_id} is already installed   --Reinstalling")              
+                mod = client.get_mod(mod_id)
+                latest = client.get_latest_file(mod_id)
+                mod_name.append(mod.get('name', f'Mod {mod_id}'))
+                file_name.append(latest.get('fileName', 'unknown'))
+                file_size += (latest.get('fileLength', 0) / 1024 / 1024)
         except Exception as e:
             out.error(str(e))
-            return
-
-    mod_name = mod.get('name', f'Mod {mod_id}')
-    file_name = latest.get('fileName', 'unknown')
-    file_size = latest.get('fileLength', 0) / 1024 / 1024
-
-    out.print(f"\n[bold]Package:[/bold] {mod_name}")
-    out.print(f"[bold]File:[/bold] {file_name} ({file_size:.2f} MB)")
+            has_exception = True    
+    if has_exception:
+        return
+    
+    if len(mod_name) ==1 :
+        out.print(f"\n[bold]Package:[/bold] {mod_name[0]}")
+        out.print(f"[bold]File:[/bold] {file_name[0]} ({file_size:.2f} MB)")
+    else:
+        out.print(f"\n[bold]Packages({len(mod_name)}):[/bold] \n{"\n".join(mod_name)}")
+        out.print(f"[bold]Files({len(file_name)}):[/bold] {" ".join(file_name)}")
+        out.print(f"[bold]Net Upgrade Size:[/bold] ({file_size:.2f} MB)")
 
     if not skip_confirm and not _confirm("\nProceed with installation?"):
         out.warning("Aborted.")
         return
+    
+    for i in range(len(mod_ids)): 
+        mod_named = mod_name[i]
+        with out.progress_download(f"Installing {mod_named}... \t") as progress:
+            try:
+                result = client.install_mod(mod_ids[i], config.mods_path, progress.update)
+                config.add_installed(mod_ids[i], result)
+            except Exception as e:
+                out.error(f"Installation failed: {e}")
+                return
 
-    with out.progress_download(f"Installing {mod_name}...") as progress:
-        try:
-            result = client.install_mod(mod_id, config.mods_path, progress.update)
-            config.add_installed(mod_id, result)
-        except Exception as e:
-            out.error(f"Installation failed: {e}")
-            return
-
-    out.success(f"Successfully installed [bold]{mod_name}[/bold]")
+    out.success(f"Successfully installed [bold]{" ".join(mod_name)}[/bold]")
     out.print(f"Location: {result['path']}")
 
 
@@ -544,6 +559,7 @@ def _do_config_interactive_key():
         out.success("API key saved")
     else:
         out.error("Invalid API key (too short)")
+
 
 
 if __name__ == '__main__':

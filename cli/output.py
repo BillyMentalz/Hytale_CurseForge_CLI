@@ -3,7 +3,7 @@
 # Try to import Rich, fallback to plain text
 try:
     from rich.console import Console
-    from rich.table import Table
+    from rich.table import Table ,Column
     from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
     from rich.panel import Panel
     from rich import box
@@ -157,10 +157,10 @@ class RichProgress:
     def __enter__(self):
         self.progress = Progress(
             SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-            console=self.console,
+            TextColumn("[progress.description]{task.description}",table_column=Column(width=40)), #Width is arbitary
+            BarColumn(bar_width=None,table_column=Column(width=40)), #Width is arbitary
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%", ),
+            console=self.console
         )
         self.progress.__enter__()
         self.task = self.progress.add_task(self.description, total=100)
