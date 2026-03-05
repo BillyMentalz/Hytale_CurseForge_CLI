@@ -76,6 +76,26 @@ class Config:
         self._data['installed'][str(mod_id)] = mod_info
         self.save()
 
+    def add_conflict(self, mod_id:int, conflict_mod_id:int , conflict_mod_name:str):
+        """Track a conflict"""
+        if 'conflicts' not in self._data:
+            self._data['conflicts'] = {}
+        conflict = {
+            'mod_id':mod_id,
+            'conflict_mod_id':conflict_mod_id,
+            'conflict_mod_name':conflict_mod_name
+        }
+        self._data['conflicts'][str(conflict_mod_id)] = conflict
+        self.save()
+    
+    def is_conflict(self, mod_id:int):
+        """Check if a mod is a conflict"""
+        return str(mod_id) in self._data.get('conflicts' , {})
+    
+    def get_conflict(self, mod_id:int): 
+        """Get information about the mod conflict"""
+        return self._data.get('conflicts', {}).get(str(mod_id), {})
+
     def remove_installed(self, mod_id: int):
         """Remove a mod from tracking."""
         if 'installed' in self._data:

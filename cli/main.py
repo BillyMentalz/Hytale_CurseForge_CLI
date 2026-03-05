@@ -4,6 +4,7 @@ Uses Click if available, otherwise falls back to argparse.
 """
 import sys
 
+
 # Try Click, fallback to argparse
 try:
     import click
@@ -13,7 +14,7 @@ except ImportError:
 
 from .output import out, HAS_RICH
 from curseforge import CurseForgeClient, Config
-
+from enum import Enum
 
 def get_client_and_config():
     """Initialize config and client."""
@@ -25,6 +26,10 @@ def get_client_and_config():
 
     client = CurseForgeClient(config.api_key)
 
+    if not config.mods_path:
+        out.error("Mods path not set. Run: hytale-cf config --mods-path /path/to/mods")
+        sys.exit()
+
     with out.status("Connecting to CurseForge"):
         if not client.init_connection():
             out.error("Failed to connect to CurseForge API")
@@ -32,6 +37,62 @@ def get_client_and_config():
 
     return client, config
 
+
+class dependencyType(Enum):
+    EmbeddedLibrary = 1
+    OptionalDependency = 2
+    RequiredDependency = 3
+    Tool = 4
+    Incompatible = 5
+    Include = 6
+
+class modInfo():
+    client, config = get_client_and_config()
+
+    def __init__(self, mod_id:int ,pre_release:bool = False):
+        self.mod_info = self.client.get_mod(mod_id)
+        self.latest = self.client.get_latest_file(mod_id , pre_release)
+        self.mod_id = mod_id
+        self.dependencies = self.latest.get('dependencies', {})
+        self.mod_name = self.mod_info.get('name', f'Mod {mod_id}')
+        self.file_name = self.latest.get('fileName')
+        self.file_download_url = self.latest.get('downloadUrl') 
+        self.file_size = self.latest.get('fileLength' ,0) /1024 /1024
+        if not self.file_download_url: raise Exception (f"File {self.mod_name} not available!")
+    
+    def install(self, progress_callback ):
+        dest_path = self.client.install_mod(
+            mod_info=self.mod_info,
+            mod_file_info=self.latest,
+            game_path=self.config.game_path,
+            progress_callback=progress_callback                            
+            )
+        return dest_path
+
+    def save(self , dest_path):
+        if (not dest_path):
+            raise Exception("No save destination supplied!")
+        save_info = {
+            'mod_id': self.mod_id,
+            'name': self.mod_name,
+            'filename':self.file_name,
+            'version': self.latest.get('displayName' ,''),
+            'file_id': self.latest.get('id'),
+            'class_id': self.mod_info.get('classId', 9137),
+            'path': dest_path
+        }
+        self.config.add_installed(self.mod_id , save_info)
+
+class conflictInfo():
+    client, config = get_client_and_config()
+
+    def __init__(self, mod_id:int, conflict_mod_id:int, conflict_mod_name:str):
+        self.mod_id = mod_id
+        self.conflict_mod_id = conflict_mod_id
+        self.conflict_mod_name = conflict_mod_name
+
+    def save(self):
+        self.config.add_conflict(self.mod_id, self.conflict_mod_id, self.conflict_mod_name)
 
 # ============================================================
 # CLICK-BASED CLI (if Click is available)
@@ -72,9 +133,10 @@ if HAS_CLICK:
     @main.command()
     @click.argument('mod_id', nargs = -1, type=int)
     @click.option('-y', '--yes', is_flag=True, help='Skip confirmation')
-    def install(mod_id: int, yes: bool):
+    @click.option('-p', '--pre-release' , is_flag = True , help='Get latest pre-release version')
+    def install(mod_id: int, yes: bool, pre_release:bool):
         """Install a mod by its ID."""
-        _do_install(mod_id, yes)
+        _do_install(mod_id, yes, pre_release)
 
     @main.command()
     @click.argument('mod_id', type=int)
@@ -97,7 +159,8 @@ if HAS_CLICK:
 
     @main.command()
     @click.option('-y', '--yes', is_flag=True, help='Skip confirmation')
-    def reinstall(yes: bool):
+    @click.option('-p', '--pre-release',is_flag=True, help='Reinstall with pre-release')
+    def reinstall(yes: bool, pre_release:bool):
         """Re-download all mods to current mods-path."""
         _do_reinstall(yes)
 
@@ -292,59 +355,107 @@ def _do_info(mod_id: int):
         out.print(f"\nWebsite: {mod['links']['websiteUrl']}")
 
 
-def _do_install(mod_ids: [int], skip_confirm: bool):
-    """Install implementation."""
-    client, config = get_client_and_config()
+def _do_install(mod_ids: list[int], skip_confirm: bool , pre_release:bool):
+    """Install implementation."""    
+    mod_ids = list(mod_ids)
+    mods = []
+    trace = [{'dependent':-1 ,'dependentType':-1}]*len(mod_ids) # to trace where conflicts come from. Apologies, not done yet
+    conflicts = []
+    total_size = 0
+    config = Config()
+    try:  
+        for mod_id in mod_ids:  
+            
+            with out.status(f"Fetching mod info for {mod_id}:"):
 
-    if not config.mods_path:
-        out.error("Mods path not set. Run: hytale-cf config --mods-path /path/to/mods")
-        return
-    
-    has_exception = False
-
-    with out.status(f"Fetching mod info:"):
-        try:
-            mod_name = []
-            file_name = [] 
-            file_size = 0
-            for mod_id in mod_ids: 
                 if config.is_installed(mod_id):
-                    out.warning(f"Warning: Mod {mod_id} is already installed   --Reinstalling")              
-                mod = client.get_mod(mod_id)
-                latest = client.get_latest_file(mod_id)
-                mod_name.append(mod.get('name', f'Mod {mod_id}'))
-                file_name.append(latest.get('fileName', 'unknown'))
-                file_size += (latest.get('fileLength', 0) / 1024 / 1024)
-        except Exception as e:
-            out.error(str(e))
-            has_exception = True    
-    if has_exception:
-        return
-    
-    if len(mod_name) ==1 :
-        out.print(f"\n[bold]Package:[/bold] {mod_name[0]}")
-        out.print(f"[bold]File:[/bold] {file_name[0]} ({file_size:.2f} MB)")
+                    out.warning(f"Warning: Mod {mod_id} is already installed   --Reinstalling")  
+
+                if config.is_conflict(mod_id):
+                    conflict = config.get_conflict(mod_id)
+                    raise Exception(f"Mod{conflict} is in conflict with {conflict.source}")          
+                
+                mod = modInfo(mod_id, pre_release)
+                mods.append(mod)
+                
+                
+                if (mod.dependencies):
+                    for dependency in mod.dependencies:
+                        depend_mod_id, relation = dependency.values()
+                        relation = dependencyType(relation)
+                        if(config.is_conflict(depend_mod_id)): 
+                            conflict = config.get_conflict(depend_mod_id)
+                            raise Exception(f"Mod {mod.mod_name} has a dependency is {depend_mod_id} which has a conflict with {conflict.get('conflict_name')}")
+                        if (config.is_installed(depend_mod_id)) : continue 
+                        to_be_installed = depend_mod_id in mod_ids 
+                        
+                        match relation:
+                            case dependencyType.EmbeddedLibrary:
+                                if (to_be_installed): continue
+                                out.print(f"Embedded Library {depend_mod_id} found for mod {mod.mod_name}")
+                                if (_confirm(f"\n Add addional library? The library is already included as a part of {mod.mod_name}")):
+                                    pass
+                                else:
+                                    continue
+                            case dependencyType.OptionalDependency:
+                                if (to_be_installed): continue
+                                out.print(f"Optional Dependency {depend_mod_id} found for mod {mod.mod_name}")
+                                if (_confirm(f"\n Add optional dependency? ")):
+                                    pass
+                                else:
+                                    continue
+                            case dependencyType.RequiredDependency:
+                                if (to_be_installed): continue
+                                out.print(f"Required Dependency {depend_mod_id} found for mod {mod.mod_name}: Adding to install")
+
+                            case dependencyType.Tool:
+                                if (to_be_installed): continue
+                                out.print(f"Tool {depend_mod_id} found for mod {mod.mod_name}: Adding to install")
+                                                             
+                            case dependencyType.Incompatible:
+                                if (to_be_installed): 
+                                    raise Exception(f"Mod {mod.mod_name} has a dependency conflict {depend_mod_id} with mod {mods[mod_ids.index(depend_mod_id)].mod_name}")
+                                else: 
+                                    incompatible =  conflictInfo(depend_mod_id, mod.mod_id , mod.mod_name)
+                                    conflicts.append(incompatible)
+                            case dependencyType.Include:
+                                out.print(f"Include dependency found. So including {depend_mod_id}")
+                        mod_ids.append(depend_mod_id)
+                        trace.append({'dependent':mod_ids.index(mod_id) , 'dependentType':relation})
+
+                total_size += (mod.file_size)
+    except Exception as e:
+        out.error(str(e))    
+        sys.exit()
+
+    if len(mods) ==1 :
+        out.print(f"\n[bold]Package:[/bold] {mods[0].mod_name}")
+        out.print(f"[bold]File:[/bold] {mods[0].file_name} ({mods[0].file_size:.2f} MB)")
     else:
-        out.print(f"\n[bold]Packages({len(mod_name)}):[/bold] \n{"\n".join(mod_name)}")
-        out.print(f"[bold]Files({len(file_name)}):[/bold] {" ".join(file_name)}")
-        out.print(f"[bold]Net Upgrade Size:[/bold] ({file_size:.2f} MB)")
+        out.print(f"\n[bold]Packages({len(mods)}):[/bold] \n{"\n".join([mod.mod_name for mod in mods])}")
+        out.print(f"[bold]Files({len(mods)}):[/bold] {" ".join([mod.file_name for mod in mods])}")
+        out.print(f"[bold]Net Upgrade Size:[/bold] ({total_size:.2f} MB)")
 
     if not skip_confirm and not _confirm("\nProceed with installation?"):
         out.warning("Aborted.")
         return
     
-    for i in range(len(mod_ids)): 
-        mod_named = mod_name[i]
-        with out.progress_download(f"Installing {mod_named}... \t") as progress:
+    for mod in mods: 
+        with out.progress_download(f"Installing {mod.mod_name}... \t") as progress:
             try:
-                result = client.install_mod(mod_ids[i], config.mods_path, progress.update)
-                config.add_installed(mod_ids[i], result)
+                dest_path = mod.install(progress.update)
+                mod.save(dest_path)
+                
             except Exception as e:
                 out.error(f"Installation failed: {e}")
                 return
+            
+    for conflict in conflicts:
+        conflict.save()
+                
 
-    out.success(f"Successfully installed [bold]{" ".join(mod_name)}[/bold]")
-    out.print(f"Location: {result['path']}")
+    out.success(f"Successfully installed {len(mods)} mods")
+    
 
 
 def _do_remove(mod_id: int, skip_confirm: bool):
@@ -476,7 +587,7 @@ def _do_update(skip_confirm: bool):
             out.error(f"Failed to update {upd['name']}: {e}")
 
 
-def _do_reinstall(skip_confirm: bool):
+def _do_reinstall(skip_confirm: bool, pre_release:bool=False):
     """Reinstall implementation."""
     client, config = get_client_and_config()
 
@@ -499,10 +610,11 @@ def _do_reinstall(skip_confirm: bool):
         mod_name = info.get('name', mod_id)
         out.print(f"\nReinstalling {mod_name}...")
         try:
-            result = client.install_mod(
+            result = client.reinstall_mod(
                 int(mod_id),
                 config.mods_path,
-                old_filename=info.get('filename')
+                old_filename=info.get('filename'),
+                pre_release=pre_release
             )
             config.add_installed(int(mod_id), result)
             out.success(f"Reinstalled {mod_name}")
@@ -547,6 +659,7 @@ def _do_config(api_key: str, mods_path: str, show: bool):
         out.print("  hytale-cf config --api-key-prompt      (interactive, safer)")
         out.print("  hytale-cf config --mods-path /path/to/mods")
         out.print("  hytale-cf config --show")
+
 
 
 def _do_config_interactive_key():
