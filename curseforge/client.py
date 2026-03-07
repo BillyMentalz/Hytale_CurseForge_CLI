@@ -129,12 +129,15 @@ class CurseForgeClient:
         res = self.request(f"/mods/{mod_id}/files")
         return res.get('data', [])
 
-    def get_latest_file(self, mod_id: int) -> dict:
+    def get_latest_file(self, mod_id: int, pre_release: bool = True) -> dict:
         """Get the latest file for a mod."""
         files = self.get_files(mod_id)
         if not files:
             raise Exception(f"No files found for mod {mod_id}")
         files.sort(key=lambda x: x['fileDate'], reverse=True)
+        if(not pre_release): 
+            files = list(filter(lambda w: w['releaseType'] == 1, files))
+            
         return files[0]
 
     def download_file(self, url: str, dest_path: str, progress_callback=None) -> str:
@@ -162,12 +165,13 @@ class CurseForgeClient:
 
         return dest_path
 
-    def install_mod(
+    def reinstall_mod(
         self,
         mod_id: int,
         game_path: str,
         progress_callback=None,
         old_filename: str = None,
+        pre_release: bool = False, 
     ) -> dict:
         """
         Download and install a mod.
@@ -175,7 +179,7 @@ class CurseForgeClient:
         Returns info about the installed file.
         """
         mod_info = self.get_mod(mod_id)
-        latest_file = self.get_latest_file(mod_id)
+        latest_file = self.get_latest_file(mod_id , pre_release)
 
         download_url = latest_file.get('downloadUrl')
         if not download_url:
@@ -218,6 +222,55 @@ class CurseForgeClient:
             'class_id': class_id,
             'path': str(dest_path),
         }
+
+
+    def install_mod(
+        self,
+        mod_info:dict ,
+        mod_file_info:dict,
+        game_path:str ,
+        progress_callback = None,
+        old_filename:str = None ):
+        """
+        Download and install a mod.
+        If old_filename is provided, removes the old file after successful download.
+        Returns info about the installed file.
+        """ 
+        
+        mod_id = mod_info.get('modId')
+        class_id = mod_info.get('classId', 9137)
+        subpath = PATH_MAP.get(class_id, "")
+        filename = mod_file_info.get('fileName' , 'unknown')
+        fileversion = mod_file_info.get('displayName' ,'')
+        fileid = mod_file_info.get('id')
+        download_url = mod_file_info.get('downloadUrl')
+        if not download_url:
+            raise Exception("Download URL not available")
+        if subpath:
+            install_dir = (Path(game_path) / subpath).resolve()
+        else:
+            install_dir = Path(game_path)
+        install_dir.mkdir(parents=True, exist_ok=True)
+        dest_path = install_dir / filename
+
+        # Download
+        self.download_file(str(download_url),str(dest_path), progress_callback)
+        # Remove old file if updating and filename changed
+        if old_filename and old_filename != filename:
+            old_path = install_dir / old_filename
+            if old_path.exists():
+                os.remove(old_path)
+
+        # If it's a world (zip), extract it
+        if class_id == 9184 and filename.endswith('.zip'):
+            extract_dir = install_dir
+            with zipfile.ZipFile(dest_path, 'r') as zf:
+                zf.extractall(extract_dir)
+            os.remove(dest_path)
+            filename = filename.replace('.zip', '')
+        
+        
+        return str(dest_path)
 
     def uninstall_mod(self, mod_info: dict, game_path: str) -> bool:
         """Remove an installed mod."""
